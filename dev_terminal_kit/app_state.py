@@ -13,7 +13,7 @@ from .app_settings import (
 from .terminal_commands import get_pid_file_path
 
 
-READY_STATUS = "Ready to launch backend and frontend."
+READY_STATUS = "Ready to launch backend and frontend"
 
 
 @dataclass(frozen=True)

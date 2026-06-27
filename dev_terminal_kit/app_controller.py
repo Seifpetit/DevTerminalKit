@@ -9,6 +9,7 @@ from .actions import (
     LaunchSelectedAgent,
     SaveCurrentPaths,
     SelectAccentColor,
+    SetColorMode,
     ToggleColorMode,
     ToggleTerminals,
 )
@@ -51,6 +52,8 @@ class AppController:
     def dispatch(self, action: Action) -> ControllerResult:
         if isinstance(action, ToggleColorMode):
             return self._toggle_color_mode()
+        if isinstance(action, SetColorMode):
+            return self._set_color_mode(action.mode)
         if isinstance(action, SelectAccentColor):
             return self._select_accent_color(action)
         if isinstance(action, SaveCurrentPaths):
@@ -71,10 +74,14 @@ class AppController:
             if self.state.color_mode == config.COLOR_MODE_NIGHT
             else config.COLOR_MODE_NIGHT
         )
+        return self._set_color_mode(next_mode)
+
+    def _set_color_mode(self, mode: str) -> ControllerResult:
+        next_mode = config.normalize_color_mode(mode)
         config.apply_color_mode_tokens(next_mode)
         save_color_mode(self.state.settings_file, next_mode)
         state = self._set_state(replace(self.state, color_mode=next_mode))
-        return ControllerResult(state=state, rebuild_ui=True, close_palette=True)
+        return ControllerResult(state=state, close_palette=True)
 
     def _select_accent_color(self, action: SelectAccentColor) -> ControllerResult:
         state = self._set_state(replace(self.state, accent_color=action.color))

@@ -10,6 +10,11 @@ class ToggleColorMode:
 
 
 @dataclass(frozen=True)
+class SetColorMode:
+    mode: str
+
+
+@dataclass(frozen=True)
 class SelectAccentColor:
     color: str
 
@@ -37,6 +42,7 @@ class ToggleTerminals:
 
 Action = Union[
     ToggleColorMode,
+    SetColorMode,
     SelectAccentColor,
     SaveCurrentPaths,
     LaunchSelectedAgent,

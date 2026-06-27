@@ -7,7 +7,7 @@ from pathlib import Path
 # App Configuration
 # =============================================================================
 
-UI_SCALE = 0.6
+UI_SCALE = 1.0
 
 
 # Scale pixel dimensions from the design baseline.
@@ -33,13 +33,13 @@ DEFAULT_FRONTEND_PATH = ROOT_DIR / "frontend"
 DEFAULT_COMMAND = "npm run dev"
 BACKEND_TAB_TITLE = "Backend"
 FRONTEND_TAB_TITLE = "Frontend"
-APP_GEOMETRY = scaled_geometry(900, 860)
-APP_MIN_WIDTH = scaled_px(800)
-APP_MIN_HEIGHT = scaled_px(920)
-CARD_HEIGHT = scaled_px(184)
-AGENT_CARD_HEIGHT = scaled_px(188)
-LAUNCH_BUTTON_TEXT = "Open Terminal Tabs"
-END_BUTTON_TEXT = "End Terminals"
+APP_GEOMETRY = "620x760"
+APP_MIN_WIDTH = 560
+APP_MIN_HEIGHT = 680
+CARD_HEIGHT = 184
+AGENT_CARD_HEIGHT = 188
+LAUNCH_BUTTON_TEXT = "Open terminal tabs"
+END_BUTTON_TEXT = "End terminals"
 SETTINGS_DIR_NAME = "DevTerminalLauncher"
 SETTINGS_FILE_NAME = "settings.json"
 APP_ICON_FILE_NAME = "app-icon.ico"
@@ -47,46 +47,72 @@ COLOR_MODE_DAY = "day"
 COLOR_MODE_NIGHT = "night"
 DEFAULT_COLOR_MODE = COLOR_MODE_DAY
 
-COLOR_THEMES = {
-    COLOR_MODE_NIGHT: {
-        "outer_bg": "#c9c4cc",
-        "bezel_bg": "#05070d",
-        "screen_bg": "#101520",
-        "card_bg": "#171d2a",
-        "field_bg": "#0c111a",
-        "field_border": "#2a3244",
-        "text_primary": "#f5f7fb",
-        "text_secondary": "#9ca8ba",
-        "shadow_bg": "#080b12",
-        "outline_hover_bg": "#111827",
-    },
+THEMES = {
     COLOR_MODE_DAY: {
-        "outer_bg": "#d7dde8",
-        "bezel_bg": "#f7f9fc",
-        "screen_bg": "#f7f9fc",
-        "card_bg": "#ffffff",
-        "field_bg": "#eef3f8",
-        "field_border": "#c6ceda",
-        "text_primary": "#172033",
-        "text_secondary": "#5b6678",
-        "shadow_bg": "#c4ccd8",
-        "outline_hover_bg": "#edf2f7",
+        "bg_page": "#F1EFE8",
+        "bg_card": "#FFFFFF",
+        "bg_surface": "#F8F7F4",
+        "border": "#E2DDD5",
+        "border_accent": "#B5D4F4",
+        "bg_accent": "#E6F1FB",
+        "fill_accent": "#378ADD",
+        "text_primary": "#1A1A18",
+        "text_secondary": "#5F5E5A",
+        "text_muted": "#888780",
+        "text_accent": "#185FA5",
+        "on_accent": "#FFFFFF",
+        "bg_orange": "#FFF3E0",
+        "icon_orange": "#F57C00",
+        "bg_purple": "#EEEDFE",
+        "icon_purple": "#534AB7",
+        "status_green": "#28C840",
+    },
+    COLOR_MODE_NIGHT: {
+        "bg_page": "#1A1A1E",
+        "bg_card": "#26262C",
+        "bg_surface": "#1E1E24",
+        "border": "#3A3A42",
+        "border_accent": "#2D5A8A",
+        "bg_accent": "#0C2A44",
+        "fill_accent": "#378ADD",
+        "text_primary": "#F0EFE8",
+        "text_secondary": "#A8A6A0",
+        "text_muted": "#666460",
+        "text_accent": "#85B7EB",
+        "on_accent": "#FFFFFF",
+        "bg_orange": "#2A1F10",
+        "icon_orange": "#F59A40",
+        "bg_purple": "#1E1A38",
+        "icon_purple": "#AFA9EC",
+        "status_green": "#28C840",
     },
 }
 
-# Color tokens used by the custom Tkinter canvas widgets.
-OUTER_BG = COLOR_THEMES[DEFAULT_COLOR_MODE]["outer_bg"]
-BEZEL_BG = COLOR_THEMES[DEFAULT_COLOR_MODE]["bezel_bg"]
-SCREEN_BG = COLOR_THEMES[DEFAULT_COLOR_MODE]["screen_bg"]
-CARD_BG = COLOR_THEMES[DEFAULT_COLOR_MODE]["card_bg"]
-FIELD_BG = COLOR_THEMES[DEFAULT_COLOR_MODE]["field_bg"]
-FIELD_BORDER = COLOR_THEMES[DEFAULT_COLOR_MODE]["field_border"]
-TEXT_PRIMARY = COLOR_THEMES[DEFAULT_COLOR_MODE]["text_primary"]
-TEXT_SECONDARY = COLOR_THEMES[DEFAULT_COLOR_MODE]["text_secondary"]
-SHADOW_BG = COLOR_THEMES[DEFAULT_COLOR_MODE]["shadow_bg"]
-OUTLINE_HOVER_BG = COLOR_THEMES[DEFAULT_COLOR_MODE]["outline_hover_bg"]
-DEFAULT_ACCENT = "#06b6d4"
-END_ACCENT = "#ef4444"
+current_theme = COLOR_MODE_DAY
+COLORS = THEMES[current_theme]
+
+FONT_MAIN = ("Segoe UI", 10)
+FONT_LABEL = ("Segoe UI", 9)
+FONT_MONO = ("Consolas", 9)
+FONT_HEAD = ("Segoe UI", 14, "bold")
+FONT_SUB = ("Segoe UI", 9)
+FONT_BTN = ("Segoe UI", 9, "bold")
+RADIUS = 8
+
+# Compatibility aliases for helper modules that still import the old token names.
+COLOR_THEMES = THEMES
+OUTER_BG = COLORS["bg_page"]
+BEZEL_BG = COLORS["bg_card"]
+SCREEN_BG = COLORS["bg_page"]
+CARD_BG = COLORS["bg_card"]
+FIELD_BG = COLORS["bg_surface"]
+FIELD_BORDER = COLORS["border"]
+TEXT_PRIMARY = COLORS["text_primary"]
+TEXT_SECONDARY = COLORS["text_secondary"]
+SHADOW_BG = COLORS["border"]
+OUTLINE_HOVER_BG = COLORS["bg_surface"]
+DEFAULT_ACCENT = COLORS["fill_accent"]
+END_ACCENT = "#FF5F57"
 PANEL_SPLINE_STEPS = 12
 AGENT_COMMANDS = {
     "Codex": "codex",
@@ -113,11 +139,13 @@ ACCENT_COLORS = (
 
 
 def normalize_color_mode(value: object) -> str:
-    return value if value in COLOR_THEMES else DEFAULT_COLOR_MODE
+    return value if value in THEMES else DEFAULT_COLOR_MODE
 
 
 # Copy the selected theme into the global color tokens used by custom widgets.
 def apply_color_mode_tokens(color_mode: str) -> None:
+    global current_theme
+    global COLORS
     global OUTER_BG
     global BEZEL_BG
     global SCREEN_BG
@@ -129,14 +157,15 @@ def apply_color_mode_tokens(color_mode: str) -> None:
     global SHADOW_BG
     global OUTLINE_HOVER_BG
 
-    theme = COLOR_THEMES[normalize_color_mode(color_mode)]
-    OUTER_BG = theme["outer_bg"]
-    BEZEL_BG = theme["bezel_bg"]
-    SCREEN_BG = theme["screen_bg"]
-    CARD_BG = theme["card_bg"]
-    FIELD_BG = theme["field_bg"]
-    FIELD_BORDER = theme["field_border"]
-    TEXT_PRIMARY = theme["text_primary"]
-    TEXT_SECONDARY = theme["text_secondary"]
-    SHADOW_BG = theme["shadow_bg"]
-    OUTLINE_HOVER_BG = theme["outline_hover_bg"]
+    current_theme = normalize_color_mode(color_mode)
+    COLORS = THEMES[current_theme]
+    OUTER_BG = COLORS["bg_page"]
+    BEZEL_BG = COLORS["bg_card"]
+    SCREEN_BG = COLORS["bg_page"]
+    CARD_BG = COLORS["bg_card"]
+    FIELD_BG = COLORS["bg_surface"]
+    FIELD_BORDER = COLORS["border"]
+    TEXT_PRIMARY = COLORS["text_primary"]
+    TEXT_SECONDARY = COLORS["text_secondary"]
+    SHADOW_BG = COLORS["border"]
+    OUTLINE_HOVER_BG = COLORS["bg_surface"]
