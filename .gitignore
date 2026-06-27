@@ -3,3 +3,6 @@ __pycache__/
 build/
 dist/
 .pytest_cache/
+.tk-runtime/
+.tcl_diag/
+.tcl_min/

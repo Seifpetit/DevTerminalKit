@@ -293,7 +293,7 @@ class DevTerminalLauncher(tk.Tk):
         self.status_text.set(self.state.status_text)
         if self.terminal_button is not None:
             text = config.END_BUTTON_TEXT if self.state.terminals_running else config.LAUNCH_BUTTON_TEXT
-            self.terminal_button.configure(text=text)
+            self.terminal_button.set_text(text)
         self.apply_theme(self.state.color_mode, dispatch=False)
 
     def _sync_vars_from_state(self) -> None:
