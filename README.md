@@ -72,8 +72,11 @@ app-icon.png                source icon image
 
 The code is split into small modules now:
 
+- `actions.py` for user intents emitted by the UI
 - `app_config.py` for constants and themes
+- `app_controller.py` for dispatching actions, updating state, and running side effects
 - `app_settings.py` for saved settings and packaged resources
+- `app_state.py` for the current app state
 - `terminal_commands.py` for terminal launch and process cleanup
 - `ui_widgets.py` for custom Tkinter canvas widgets
 - `ui_tree.py` for the small declarative UI builder

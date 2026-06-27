@@ -1,29 +1,19 @@
 from __future__ import annotations
 
 import tkinter as tk
-from pathlib import Path
 from tkinter import filedialog, messagebox
 
 from . import app_config as config
-from .app_settings import (
-    get_settings_file_path,
-    load_saved_agent_project_root,
-    load_saved_color_mode,
-    load_saved_paths,
-    save_agent_project_root,
-    save_color_mode,
-    save_paths,
-    set_window_icon,
+from .actions import (
+    Action,
+    LaunchSelectedAgent,
+    SaveCurrentPaths,
+    SelectAccentColor,
+    ToggleColorMode,
+    ToggleTerminals,
 )
-from .terminal_commands import (
-    clear_pid_file,
-    get_pid_file_path,
-    open_agent_terminal,
-    open_windows_terminal_tabs,
-    terminate_recorded_processes,
-    validate_command_text,
-    validate_project_path,
-)
+from .app_controller import AppController, ControllerResult
+from .app_settings import set_window_icon
 from .ui_tree import UINode, mount_ui_tree, rounded_panel_content
 from .ui_widgets import (
     ColorModeSwitch,
@@ -44,10 +34,8 @@ class DevTerminalLauncher(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
 
-        self.pid_file = get_pid_file_path()
-        self.settings_file = get_settings_file_path()
-        self.color_mode = load_saved_color_mode(self.settings_file)
-        config.apply_color_mode_tokens(self.color_mode)
+        self.controller = AppController.load()
+        self.state = self.controller.state
 
         self.title(config.APP_TITLE)
         set_window_icon(self)
@@ -55,29 +43,22 @@ class DevTerminalLauncher(tk.Tk):
         self.minsize(config.APP_MIN_WIDTH, config.APP_MIN_HEIGHT)
         self.configure(bg=config.OUTER_BG)
 
-        self.accent_color = config.DEFAULT_ACCENT
         self.accent_widgets: list[PillButton | ColorModeSwitch] = []
         self.agent_listbox: tk.Listbox | None = None
         self.field_widgets: list[RoundedEntry] = []
         self.launch_button: PillButton | None = None
         self.palette_window: tk.Toplevel | None = None
         self.shell_panel: RoundedPanel | None = None
-        self.terminals_running = False
 
-        saved_backend_path, saved_frontend_path = load_saved_paths(self.settings_file)
-        saved_agent_project_root = load_saved_agent_project_root(
-            self.settings_file,
-            saved_backend_path,
-            saved_frontend_path,
-        )
-        self.backend_path = tk.StringVar(value=str(saved_backend_path))
-        self.frontend_path = tk.StringVar(value=str(saved_frontend_path))
-        self.agent_project_root = tk.StringVar(value=str(saved_agent_project_root))
-        self.backend_command = tk.StringVar(value=config.DEFAULT_COMMAND)
-        self.frontend_command = tk.StringVar(value=config.DEFAULT_COMMAND)
-        self.status_text = tk.StringVar(value="Ready to launch backend and frontend.")
+        self.backend_path = tk.StringVar(value=self.state.backend_path)
+        self.frontend_path = tk.StringVar(value=self.state.frontend_path)
+        self.agent_project_root = tk.StringVar(value=self.state.agent_project_root)
+        self.backend_command = tk.StringVar(value=self.state.backend_command)
+        self.frontend_command = tk.StringVar(value=self.state.frontend_command)
+        self.status_text = tk.StringVar(value=self.state.status_text)
 
         self._build_ui()
+        self.render()
 
     # Compose the main sections from small builders.
     def _build_ui(self) -> None:
@@ -95,8 +76,25 @@ class DevTerminalLauncher(tk.Tk):
         self.field_widgets = []
         self.launch_button = None
         self._build_ui()
-        if self.terminals_running:
-            self.set_terminal_state(True)
+
+    def dispatch(self, action: Action) -> None:
+        result = self.controller.dispatch(action)
+        self._apply_result(result)
+
+    def _apply_result(self, result: ControllerResult) -> None:
+        self.state = result.state
+        if result.close_palette:
+            self._close_palette()
+        if result.rebuild_ui:
+            self._rebuild_ui()
+        self.render()
+        if result.dialog is not None:
+            messagebox.showerror(result.dialog.title, result.dialog.message)
+
+    def render(self) -> None:
+        self.status_text.set(self.state.status_text)
+        self._render_accent_color()
+        self._render_terminal_state()
 
     # Root UI tree: shell, header, cards, and footer.
     def _frontend_tree(self) -> UINode:
@@ -177,9 +175,9 @@ class DevTerminalLauncher(tk.Tk):
         return UINode(
             create=lambda parent: ColorModeSwitch(
                 parent,
-                mode=self.color_mode,
+                mode=self.state.color_mode,
                 command=self.toggle_color_mode,
-                accent=self.accent_color,
+                accent=self.state.accent_color,
                 width=config.scaled_px(118),
                 height=config.scaled_px(34),
                 parent_bg=config.SCREEN_BG,
@@ -196,7 +194,7 @@ class DevTerminalLauncher(tk.Tk):
                 parent,
                 text="Customize appearance",
                 command=self.open_appearance_menu,
-                accent=self.accent_color,
+                accent=self.state.accent_color,
                 variant="outline",
                 width=config.scaled_px(220),
                 height=config.scaled_px(34),
@@ -316,7 +314,7 @@ class DevTerminalLauncher(tk.Tk):
                         parent,
                         text=config.LAUNCH_BUTTON_TEXT,
                         command=self.toggle_terminals,
-                        accent=self.accent_color,
+                        accent=self.state.accent_color,
                         variant="accent",
                         width=config.scaled_px(190),
                         height=config.scaled_px(44),
@@ -353,7 +351,7 @@ class DevTerminalLauncher(tk.Tk):
             max(config.scaled_px(80), width // 3),
             config.scaled_px(4),
             config.scaled_px(2),
-            fill=self.accent_color,
+            fill=self.state.accent_color,
             outline="",
         )
 
@@ -471,7 +469,7 @@ class DevTerminalLauncher(tk.Tk):
                 layout_options={"row": row, "column": 0, "sticky": "w", "pady": config.scaled_px(4)},
             ),
             UINode(
-                create=lambda parent: RoundedEntry(parent, variable=variable, accent=self.accent_color),
+                create=lambda parent: RoundedEntry(parent, variable=variable, accent=self.state.accent_color),
                 layout="grid",
                 layout_options={
                     "row": row,
@@ -492,7 +490,7 @@ class DevTerminalLauncher(tk.Tk):
                 parent,
                 text="Browse",
                 command=lambda: self.choose_folder(variable),
-                accent=self.accent_color,
+                accent=self.state.accent_color,
                 variant="accent",
                 width=config.scaled_px(102),
                 height=config.scaled_px(38),
@@ -539,13 +537,13 @@ class DevTerminalLauncher(tk.Tk):
                     activestyle="none",
                     bg=config.FIELD_BG,
                     fg=config.TEXT_PRIMARY,
-                    selectbackground=self.accent_color,
-                    selectforeground=contrast_text_color(self.accent_color),
+                    selectbackground=self.state.accent_color,
+                    selectforeground=contrast_text_color(self.state.accent_color),
                     relief="flat",
                     borderwidth=0,
                     highlightthickness=1,
                     highlightbackground=config.FIELD_BORDER,
-                    highlightcolor=self.accent_color,
+                    highlightcolor=self.state.accent_color,
                     exportselection=False,
                     selectmode=tk.SINGLE,
                     font=("Segoe UI", config.scaled_font(10)),
@@ -565,7 +563,7 @@ class DevTerminalLauncher(tk.Tk):
                     parent,
                     text="Launch Agent",
                     command=self.launch_selected_agent,
-                    accent=self.accent_color,
+                    accent=self.state.accent_color,
                     variant="accent",
                     width=config.scaled_px(132),
                     height=config.scaled_px(42),
@@ -698,7 +696,7 @@ class DevTerminalLauncher(tk.Tk):
             return
 
         swatch_size = config.scaled_px(34)
-        outline = config.TEXT_PRIMARY if color == self.accent_color else config.CARD_BG
+        outline = config.TEXT_PRIMARY if color == self.state.accent_color else config.CARD_BG
         draw_rounded_rect(
             widget,
             1,
@@ -714,31 +712,26 @@ class DevTerminalLauncher(tk.Tk):
 
     # Selecting a swatch updates the whole app then closes the popup.
     def _select_palette_color(self, color: str, palette: tk.Toplevel) -> None:
-        self.set_accent_color(color)
-        self._close_palette()
+        self.dispatch(SelectAccentColor(color))
 
-    # Toggle between day and night themes, then rebuild themed widgets.
+    # Emit a theme-toggle action; the controller decides the next mode.
     def toggle_color_mode(self) -> None:
-        self.color_mode = config.COLOR_MODE_DAY if self.color_mode == config.COLOR_MODE_NIGHT else config.COLOR_MODE_NIGHT
-        config.apply_color_mode_tokens(self.color_mode)
-        save_color_mode(self.settings_file, self.color_mode)
-        self._rebuild_ui()
+        self.dispatch(ToggleColorMode())
 
-    # Recolor all accent-aware widgets, except the active red end button.
-    def set_accent_color(self, color: str) -> None:
-        self.accent_color = color
+    # Recolor accent-aware widgets from the current app state.
+    def _render_accent_color(self) -> None:
         for widget in self.accent_widgets:
-            widget.set_accent(color)
+            widget.set_accent(self.state.accent_color)
         if self.agent_listbox is not None:
             self.agent_listbox.configure(
-                selectbackground=color,
-                selectforeground=contrast_text_color(color),
-                highlightcolor=color,
+                selectbackground=self.state.accent_color,
+                selectforeground=contrast_text_color(self.state.accent_color),
+                highlightcolor=self.state.accent_color,
             )
         for field in self.field_widgets:
-            field.set_accent(color)
-        if self.launch_button is not None and not self.terminals_running:
-            self.launch_button.set_accent(color)
+            field.set_accent(self.state.accent_color)
+        if self.launch_button is not None and not self.state.terminals_running:
+            self.launch_button.set_accent(self.state.accent_color)
         self._redraw_accent_rule(self.accent_rule.winfo_width())
 
     # Folder picker writes directly into the field variable it belongs to.
@@ -748,16 +741,14 @@ class DevTerminalLauncher(tk.Tk):
             variable.set(selected)
             self.save_current_paths()
 
-    # Store the path fields so they become the defaults for the next app launch.
+    # Persist the current path fields through the controller.
     def save_current_paths(self) -> None:
-        save_paths(
-            self.settings_file,
-            Path(self.backend_path.get()).expanduser(),
-            Path(self.frontend_path.get()).expanduser(),
-        )
-        save_agent_project_root(
-            self.settings_file,
-            Path(self.agent_project_root.get()).expanduser(),
+        self.dispatch(
+            SaveCurrentPaths(
+                backend_path=self.backend_path.get(),
+                frontend_path=self.frontend_path.get(),
+                agent_project_root=self.agent_project_root.get(),
+            )
         )
 
     # Read the selected agent name from the listbox.
@@ -766,92 +757,37 @@ class DevTerminalLauncher(tk.Tk):
             return None
         selection = self.agent_listbox.curselection()
         if not selection:
-            messagebox.showerror("Missing agent", "Please choose an agent.")
             return None
         agent_name = self.agent_listbox.get(selection[0])
         return agent_name if agent_name in config.AGENT_COMMANDS else None
 
-    # Validate the project root and open the selected agent.
+    # Emit the selected-agent launch intent.
     def launch_selected_agent(self) -> None:
-        agent_name = self.get_selected_agent_name()
-        if agent_name is None:
-            return
-
-        project_root = validate_project_path(self.agent_project_root.get(), "agent project root")
-        if project_root is None:
-            return
-
-        try:
-            launched = open_agent_terminal(
-                agent_name,
-                project_root,
-                config.AGENT_COMMANDS[agent_name],
+        self.dispatch(
+            LaunchSelectedAgent(
+                agent_name=self.get_selected_agent_name(),
+                project_root=self.agent_project_root.get(),
             )
-        except OSError as error:
-            messagebox.showerror("Agent launch failed", str(error))
-            return
+        )
 
-        if not launched:
-            return
-
-        save_agent_project_root(self.settings_file, project_root)
-        self.status_text.set(f"{agent_name} opened in {project_root}.")
-
-    # The main button toggles between launching and ending recorded terminals.
+    # Emit the launch/end intent with a snapshot of current form input.
     def toggle_terminals(self) -> None:
-        if self.terminals_running:
-            self.end_terminals()
-            return
-        self.launch()
+        self.dispatch(
+            ToggleTerminals(
+                backend_path=self.backend_path.get(),
+                frontend_path=self.frontend_path.get(),
+                backend_command=self.backend_command.get(),
+                frontend_command=self.frontend_command.get(),
+            )
+        )
 
-    # Centralize the red/green button state changes.
-    def set_terminal_state(self, running: bool) -> None:
-        self.terminals_running = running
+    # Render the launch button from the current terminal state.
+    def _render_terminal_state(self) -> None:
         if self.launch_button is None:
             return
-        self.launch_button.set_text(config.END_BUTTON_TEXT if running else config.LAUNCH_BUTTON_TEXT)
-        self.launch_button.set_accent(config.END_ACCENT if running else self.accent_color)
-
-    # End only the process trees that this app recorded at launch time.
-    def end_terminals(self) -> None:
-        terminated = terminate_recorded_processes(self.pid_file)
-        self.set_terminal_state(False)
-        if terminated:
-            self.status_text.set("Terminal tasks ended.")
-            return
-        self.status_text.set("No recorded terminal tasks were running.")
-
-    # Validate UI values, launch the two tabs, and flip the button into end mode.
-    def launch(self) -> None:
-        backend = validate_project_path(self.backend_path.get(), "backend")
-        if backend is None:
-            return
-
-        frontend = validate_project_path(self.frontend_path.get(), "frontend")
-        if frontend is None:
-            return
-
-        backend_command = validate_command_text(self.backend_command.get(), "backend")
-        if backend_command is None:
-            return
-
-        frontend_command = validate_command_text(self.frontend_command.get(), "frontend")
-        if frontend_command is None:
-            return
-
-        try:
-            clear_pid_file(self.pid_file)
-            open_windows_terminal_tabs(
-                backend,
-                backend_command,
-                frontend,
-                frontend_command,
-                self.pid_file,
-            )
-        except OSError as error:
-            messagebox.showerror("Launch failed", str(error))
-            return
-
-        save_paths(self.settings_file, backend, frontend)
-        self.set_terminal_state(True)
-        self.status_text.set("Windows Terminal opened with backend and frontend tabs.")
+        self.launch_button.set_text(
+            config.END_BUTTON_TEXT if self.state.terminals_running else config.LAUNCH_BUTTON_TEXT
+        )
+        self.launch_button.set_accent(
+            config.END_ACCENT if self.state.terminals_running else self.state.accent_color
+        )

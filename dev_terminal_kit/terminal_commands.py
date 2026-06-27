@@ -5,7 +5,6 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from tkinter import messagebox
 
 from . import app_config as config
 
@@ -13,6 +12,12 @@ from . import app_config as config
 # =============================================================================
 # Terminal And Process Helpers
 # =============================================================================
+
+class TerminalUserError(Exception):
+    def __init__(self, title: str, message: str) -> None:
+        super().__init__(message)
+        self.title = title
+        self.message = message
 
 def get_pid_file_path() -> Path:
     return Path(tempfile.gettempdir()) / "dev_terminal_launcher_pids.txt"
@@ -54,27 +59,24 @@ def clear_pid_file(pid_file: Path) -> None:
 # =============================================================================
 
 # Convert a path field into a real folder path before launching commands.
-def validate_project_path(path_text: str, label: str) -> Path | None:
+def validate_project_path(path_text: str, label: str) -> Path:
     path = Path(path_text).expanduser()
 
     if not path_text.strip():
-        messagebox.showerror("Missing path", f"Please choose a {label} path.")
-        return None
+        raise TerminalUserError("Missing path", f"Please choose a {label} path.")
 
     if not path.exists() or not path.is_dir():
-        messagebox.showerror("Invalid path", f"The {label} path is not a folder:\n{path}")
-        return None
+        raise TerminalUserError("Invalid path", f"The {label} path is not a folder:\n{path}")
 
     return path.resolve()
 
 
 # Prevent empty commands from opening tabs that immediately do nothing.
-def validate_command_text(command_text: str, label: str) -> str | None:
+def validate_command_text(command_text: str, label: str) -> str:
     command = command_text.strip()
 
     if not command:
-        messagebox.showerror("Missing command", f"Please enter a command for {label}.")
-        return None
+        raise TerminalUserError("Missing command", f"Please enter a command for {label}.")
 
     return command
 
@@ -140,11 +142,10 @@ def open_windows_terminal_tabs(
     pid_file: Path | None = None,
 ) -> None:
     if not is_windows_terminal_available():
-        messagebox.showerror(
+        raise TerminalUserError(
             "Windows Terminal not found",
             "This launcher needs Windows Terminal installed so it can use wt.exe.",
         )
-        return
 
     command = [
         "wt.exe",
@@ -160,13 +161,12 @@ def open_windows_terminal_tabs(
 
 
 # Open one interactive agent session in a fresh Windows Terminal window.
-def open_agent_terminal(agent_name: str, project_root: Path, command_text: str) -> bool:
+def open_agent_terminal(agent_name: str, project_root: Path, command_text: str) -> None:
     if not is_windows_terminal_available():
-        messagebox.showerror(
+        raise TerminalUserError(
             "Windows Terminal not found",
             "This launcher needs Windows Terminal installed so it can use wt.exe.",
         )
-        return False
 
     command = [
         "wt.exe",
@@ -175,7 +175,6 @@ def open_agent_terminal(agent_name: str, project_root: Path, command_text: str) 
         *build_tab_command(f"{agent_name} Agent", project_root, command_text),
     ]
     subprocess.Popen(command)
-    return True
 
 
 # Parse the PID file defensively; ignore any non-numeric lines.
