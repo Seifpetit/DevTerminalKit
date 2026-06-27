@@ -14,14 +14,217 @@ from .actions import (
 )
 from .app_controller import AppController, ControllerResult
 from .app_settings import set_window_icon
+from .ui_widgets import draw_rounded_rect
 
 
 HOVER_PRIMARY = "#2D7ACC"
-TRAFFIC_DOTS = (
-    ("#FF5F57", "close"),
+LEFT_TRAFFIC_DOTS = (
     ("#FEBC2E", "minimize"),
     ("#28C840", "idle"),
 )
+
+
+class RoundedSurface(tk.Canvas):
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        fill_key: str,
+        outside_key: str,
+        border_key: str | None = None,
+        radius: int = config.RADIUS,
+        border_width: int = 0,
+        padding_x: int = 0,
+        padding_y: int = 0,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> None:
+        super().__init__(
+            parent,
+            bg=config.COLORS[outside_key],
+            bd=0,
+            highlightthickness=0,
+            width=width,
+            height=height,
+        )
+        self.fill_key = fill_key
+        self.outside_key = outside_key
+        self.border_key = border_key
+        self.radius = radius
+        self.border_width = border_width
+        self.padding_x = padding_x
+        self.padding_y = padding_y
+        self.fixed_width = width
+        self.fixed_height = height
+        self.content = tk.Frame(self, bg=config.COLORS[fill_key])
+        self._content_window = self.create_window(
+            border_width + padding_x,
+            border_width + padding_y,
+            anchor="nw",
+            window=self.content,
+        )
+        self.content.bind("<Configure>", self._resize_to_content)
+        self.bind("<Configure>", self._redraw)
+
+    def _resize_to_content(self, _event: tk.Event) -> None:
+        total_x = (self.border_width * 2) + (self.padding_x * 2)
+        total_y = (self.border_width * 2) + (self.padding_y * 2)
+        updates: dict[str, int] = {}
+        if self.fixed_width is None:
+            updates["width"] = self.content.winfo_reqwidth() + total_x
+        if self.fixed_height is None:
+            updates["height"] = self.content.winfo_reqheight() + total_y
+        if updates:
+            self.configure(**updates)
+
+    def apply_theme(self) -> None:
+        self.configure(bg=config.COLORS[self.outside_key])
+        self.content.configure(bg=config.COLORS[self.fill_key])
+        self._redraw()
+
+    def _redraw(self, event: tk.Event | None = None) -> None:
+        width = max(1, self.winfo_width() if event is None else event.width)
+        height = max(1, self.winfo_height() if event is None else event.height)
+        self.delete("surface")
+
+        if self.border_key is not None and self.border_width:
+            draw_rounded_rect(
+                self,
+                0,
+                0,
+                width,
+                height,
+                self.radius,
+                fill=config.COLORS[self.border_key],
+                outline="",
+                tags="surface",
+            )
+
+        inset = self.border_width
+        fill_radius = max(1, self.radius - inset)
+        draw_rounded_rect(
+            self,
+            inset,
+            inset,
+            width - inset,
+            height - inset,
+            fill_radius,
+            fill=config.COLORS[self.fill_key],
+            outline="",
+            tags="surface",
+        )
+
+        inner_width = max(1, width - (self.border_width * 2) - (self.padding_x * 2))
+        inner_height = max(1, height - (self.border_width * 2) - (self.padding_y * 2))
+        self.itemconfigure(self._content_window, width=inner_width, height=inner_height)
+        self.tag_lower("surface")
+
+
+class RoundedButton(tk.Canvas):
+    def __init__(
+        self,
+        parent: tk.Widget,
+        *,
+        text: str,
+        command: Callable[[], None],
+        font: tuple[str, int] | tuple[str, int, str],
+        width: int,
+        height: int,
+        outside_key: str,
+        radius: int = config.RADIUS,
+    ) -> None:
+        super().__init__(
+            parent,
+            width=width,
+            height=height,
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2",
+        )
+        self.text = text
+        self.command = command
+        self.font = font
+        self.radius = radius
+        self.outside_key = outside_key
+        self.fill = config.COLORS["bg_surface"]
+        self.foreground = config.COLORS["text_primary"]
+        self.border = config.COLORS["border"]
+        self.hovered = False
+        self.pressed = False
+        self.on_hover_change: Callable[[bool], None] | None = None
+
+        self.bind("<Enter>", self._enter)
+        self.bind("<Leave>", self._leave)
+        self.bind("<Button-1>", self._press)
+        self.bind("<ButtonRelease-1>", self._release)
+        self.bind("<Configure>", lambda _event: self._redraw())
+        self._redraw()
+
+    def set_text(self, text: str) -> None:
+        self.text = text
+        self._redraw()
+
+    def set_colors(self, *, fill: str, foreground: str, border: str) -> None:
+        self.fill = fill
+        self.foreground = foreground
+        self.border = border
+        self.configure(bg=config.COLORS[self.outside_key])
+        self._redraw()
+
+    def _redraw(self) -> None:
+        width = max(1, self.winfo_width())
+        height = max(1, self.winfo_height())
+        self.delete("button")
+        draw_rounded_rect(
+            self,
+            0,
+            0,
+            width,
+            height,
+            self.radius,
+            fill=self.border,
+            outline="",
+            tags="button",
+        )
+        draw_rounded_rect(
+            self,
+            1,
+            1,
+            width - 1,
+            height - 1,
+            max(1, self.radius - 1),
+            fill=self.fill,
+            outline="",
+            tags="button",
+        )
+        self.create_text(
+            width // 2,
+            height // 2,
+            text=self.text,
+            fill=self.foreground,
+            font=self.font,
+            tags="button",
+        )
+
+    def _enter(self, _event: tk.Event) -> None:
+        self.hovered = True
+        if self.on_hover_change is not None:
+            self.on_hover_change(True)
+
+    def _leave(self, _event: tk.Event) -> None:
+        self.hovered = False
+        self.pressed = False
+        if self.on_hover_change is not None:
+            self.on_hover_change(False)
+
+    def _press(self, _event: tk.Event) -> None:
+        self.pressed = True
+
+    def _release(self, _event: tk.Event) -> None:
+        was_pressed = self.pressed
+        self.pressed = False
+        if was_pressed and self.hovered:
+            self.command()
 
 
 class DevTerminalLauncher(tk.Tk):
@@ -32,10 +235,11 @@ class DevTerminalLauncher(tk.Tk):
         self.state = self.controller.state
 
         self.theme_registry: list[tuple[str, tk.Widget, str]] = []
+        self.rounded_surfaces: list[RoundedSurface] = []
         self.button_registry: list[dict[str, object]] = []
         self.listboxes: list[tk.Listbox] = []
         self.theme_buttons: dict[str, dict[str, object]] = {}
-        self.terminal_button: tk.Button | None = None
+        self.terminal_button: RoundedButton | None = None
         self.agent_listbox: tk.Listbox | None = None
         self.status_dot: tk.Canvas | None = None
         self.content_canvas: tk.Canvas | None = None
@@ -129,6 +333,8 @@ class DevTerminalLauncher(tk.Tk):
                 selectforeground=colors["on_accent"],
             )
 
+        for surface in self.rounded_surfaces:
+            surface.apply_theme()
         self._draw_status_dot()
         for button_info in self.button_registry:
             self._style_button(button_info)
@@ -152,6 +358,35 @@ class DevTerminalLauncher(tk.Tk):
         frame = tk.Frame(parent, bg=config.COLORS[color_key], **options)
         self._register_theme(frame, "bg", color_key)
         return frame
+
+    def _rounded_content(
+        self,
+        parent: tk.Widget,
+        *,
+        fill_key: str,
+        outside_key: str,
+        border_key: str | None = None,
+        radius: int = config.RADIUS,
+        border_width: int = 0,
+        padding_x: int = 0,
+        padding_y: int = 0,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> tuple[RoundedSurface, tk.Frame]:
+        surface = RoundedSurface(
+            parent,
+            fill_key=fill_key,
+            outside_key=outside_key,
+            border_key=border_key,
+            radius=radius,
+            border_width=border_width,
+            padding_x=padding_x,
+            padding_y=padding_y,
+            width=width,
+            height=height,
+        )
+        self.rounded_surfaces.append(surface)
+        return surface, surface.content
 
     def _themed_label(
         self,
@@ -187,15 +422,10 @@ class DevTerminalLauncher(tk.Tk):
 
         dots = self._themed_frame(titlebar, "bg_page")
         dots.grid(row=0, column=0, sticky="w", padx=(16, 0), pady=12)
-        for color, action in TRAFFIC_DOTS:
-            dot = tk.Canvas(dots, width=12, height=12, bg=config.COLORS["bg_page"], bd=0, highlightthickness=0)
-            self._register_theme(dot, "bg", "bg_page")
-            dot.create_oval(1, 1, 11, 11, fill=color, outline=color)
+        for color, action in LEFT_TRAFFIC_DOTS:
+            dot = self._traffic_dot(dots, color)
             dot.pack(side="left", padx=(0, 8))
-            dot.configure(cursor="hand2")
-            if action == "close":
-                dot.bind("<Button-1>", lambda _event: self.destroy())
-            elif action == "minimize":
+            if action == "minimize":
                 dot.bind("<Button-1>", lambda _event: self._minimize_window())
 
         title = self._themed_label(
@@ -208,9 +438,18 @@ class DevTerminalLauncher(tk.Tk):
         title.grid(row=0, column=1, pady=9)
         self._bind_drag(title)
 
-        spacer = self._themed_frame(titlebar, "bg_page")
-        spacer.grid(row=0, column=2, sticky="e")
-        self._bind_drag(spacer)
+        close_area = self._themed_frame(titlebar, "bg_page")
+        close_area.grid(row=0, column=2, sticky="e", padx=(0, 16), pady=12)
+        close_dot = self._traffic_dot(close_area, "#FF5F57")
+        close_dot.pack()
+        close_dot.bind("<Button-1>", lambda _event: self.destroy())
+
+    def _traffic_dot(self, parent: tk.Widget, color: str) -> tk.Canvas:
+        dot = tk.Canvas(parent, width=12, height=12, bg=config.COLORS["bg_page"], bd=0, highlightthickness=0)
+        self._register_theme(dot, "bg", "bg_page")
+        dot.create_oval(1, 1, 11, 11, fill=color, outline=color)
+        dot.configure(cursor="hand2")
+        return dot
 
     def _build_header(self) -> None:
         header = self._themed_frame(self, "bg_page")
@@ -220,7 +459,7 @@ class DevTerminalLauncher(tk.Tk):
         brand = self._themed_frame(header, "bg_page")
         brand.grid(row=0, column=0, sticky="w")
 
-        icon = self._icon_box(brand, ">_", "bg_accent", "text_accent", size=24)
+        icon = self._icon_box(brand, ">_", "bg_accent", "text_accent", size=24, outside_key="bg_page")
         icon.pack(side="left")
         self._themed_label(
             brand,
@@ -238,6 +477,7 @@ class DevTerminalLauncher(tk.Tk):
             command=lambda: self.apply_theme(config.COLOR_MODE_DAY),
             variant="theme",
             mode=config.COLOR_MODE_DAY,
+            outside_key="bg_page",
             padx=12,
             pady=5,
         ).pack(side="left", padx=(0, 4))
@@ -247,6 +487,7 @@ class DevTerminalLauncher(tk.Tk):
             command=lambda: self.apply_theme(config.COLOR_MODE_NIGHT),
             variant="theme",
             mode=config.COLOR_MODE_NIGHT,
+            outside_key="bg_page",
             padx=12,
             pady=5,
         ).pack(side="left")
@@ -351,12 +592,13 @@ class DevTerminalLauncher(tk.Tk):
             command=self.toggle_terminals,
             variant="primary",
             role="terminal",
+            outside_key="bg_page",
             padx=18,
             pady=9,
             font=("Segoe UI", 10, "bold"),
         )
         button_frame.grid(row=0, column=1, sticky="e")
-        self.terminal_button = self._button_from_frame(button_frame)
+        self.terminal_button = button_frame
 
     def _build_workspace_card(
         self,
@@ -383,11 +625,17 @@ class DevTerminalLauncher(tk.Tk):
         self._agent_row(card, 2)
 
     def _card(self, parent: tk.Widget) -> tk.Frame:
-        outer = self._themed_frame(parent, "border", padx=1, pady=1)
-        outer.pack(fill="x", pady=(0, 12))
-
-        card = self._themed_frame(outer, "bg_card", padx=16, pady=16)
-        card.pack(fill="x")
+        surface, card = self._rounded_content(
+            parent,
+            fill_key="bg_card",
+            outside_key="bg_page",
+            border_key="border",
+            radius=10,
+            border_width=1,
+            padding_x=16,
+            padding_y=16,
+        )
+        surface.pack(fill="x", pady=(0, 12))
         card.grid_columnconfigure(0, minsize=80)
         card.grid_columnconfigure(1, weight=1)
         return card
@@ -416,10 +664,17 @@ class DevTerminalLauncher(tk.Tk):
             font=("Segoe UI", 11, "bold"),
         ).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
-        badge_outer = self._themed_frame(header, "border", padx=1, pady=1)
+        badge_outer, badge_inner = self._rounded_content(
+            header,
+            fill_key="bg_surface",
+            outside_key="bg_card",
+            border_key="border",
+            radius=5,
+            border_width=1,
+            padding_x=8,
+            padding_y=3,
+        )
         badge_outer.grid(row=0, column=2, sticky="e")
-        badge_inner = self._themed_frame(badge_outer, "bg_surface", padx=8, pady=3)
-        badge_inner.pack()
         self._themed_label(
             badge_inner,
             text=badge,
@@ -456,10 +711,17 @@ class DevTerminalLauncher(tk.Tk):
     def _agent_row(self, card: tk.Widget, row: int) -> None:
         self._field_label(card, "Agent").grid(row=row, column=0, sticky="w", pady=5)
 
-        listbox_outer = self._themed_frame(card, "border", padx=1, pady=1)
+        listbox_outer, listbox_inner = self._rounded_content(
+            card,
+            fill_key="bg_surface",
+            outside_key="bg_card",
+            border_key="border",
+            radius=6,
+            border_width=1,
+            padding_x=7,
+            padding_y=4,
+        )
         listbox_outer.grid(row=row, column=1, sticky="ew", padx=(10, 8), pady=5)
-        listbox_inner = self._themed_frame(listbox_outer, "bg_surface", padx=7, pady=4)
-        listbox_inner.pack(fill="x")
 
         listbox = tk.Listbox(
             listbox_inner,
@@ -503,9 +765,16 @@ class DevTerminalLauncher(tk.Tk):
         )
 
     def _entry(self, parent: tk.Widget, variable: tk.StringVar) -> tk.Frame:
-        outer = self._themed_frame(parent, "border", padx=1, pady=1)
-        inner = self._themed_frame(outer, "bg_surface", padx=7, pady=4)
-        inner.pack(fill="x")
+        outer, inner = self._rounded_content(
+            parent,
+            fill_key="bg_surface",
+            outside_key="bg_card",
+            border_key="border",
+            radius=6,
+            border_width=1,
+            padding_x=7,
+            padding_y=4,
+        )
         entry = tk.Entry(
             inner,
             textvariable=variable,
@@ -531,9 +800,18 @@ class DevTerminalLauncher(tk.Tk):
         fg_key: str,
         *,
         size: int,
-    ) -> tk.Frame:
-        box = self._themed_frame(parent, bg_key, width=size, height=size)
-        box.pack_propagate(False)
+        outside_key: str = "bg_card",
+    ) -> RoundedSurface:
+        surface, box = self._rounded_content(
+            parent,
+            fill_key=bg_key,
+            outside_key=outside_key,
+            radius=6,
+            padding_x=1,
+            padding_y=1,
+            width=size,
+            height=size,
+        )
         self._themed_label(
             box,
             text=text,
@@ -541,7 +819,7 @@ class DevTerminalLauncher(tk.Tk):
             fg=fg_key,
             font=("Segoe UI", 8, "bold"),
         ).pack(expand=True)
-        return box
+        return surface
 
     def _make_button(
         self,
@@ -552,28 +830,34 @@ class DevTerminalLauncher(tk.Tk):
         variant: str,
         mode: str | None = None,
         role: str | None = None,
+        outside_key: str = "bg_card",
         padx: int = 10,
         pady: int = 6,
         font: tuple[str, int] | tuple[str, int, str] = config.FONT_BTN,
-    ) -> tk.Frame:
-        bordered = variant in {"browse", "theme"}
-        outer = tk.Frame(parent, bg=config.COLORS["border"], padx=1 if bordered else 0, pady=1 if bordered else 0)
-        button = tk.Button(
-            outer,
+    ) -> RoundedButton:
+        width = max(44, round(len(text) * 7.2) + (padx * 2))
+        height = max(24, 18 + (pady * 2))
+        if variant == "browse":
+            width = max(width, 82)
+        elif variant == "primary" and role == "terminal":
+            width = max(width, 164)
+        elif variant == "primary":
+            width = max(width, 112)
+        elif variant == "theme":
+            width = max(width, 58)
+
+        button = RoundedButton(
+            parent,
             text=text,
             command=command,
-            relief="flat",
-            borderwidth=0,
-            highlightthickness=0,
-            cursor="hand2",
             font=font,
-            padx=padx,
-            pady=pady,
+            width=width,
+            height=height,
+            outside_key=outside_key,
+            radius=config.RADIUS,
         )
-        button.pack(fill="both", expand=True)
 
         info: dict[str, object] = {
-            "outer": outer,
             "button": button,
             "variant": variant,
             "mode": mode,
@@ -584,15 +868,9 @@ class DevTerminalLauncher(tk.Tk):
         if variant == "theme" and mode is not None:
             self.theme_buttons[mode] = info
 
-        button.bind("<Enter>", lambda _event, item=info: self._set_button_hover(item, True))
-        button.bind("<Leave>", lambda _event, item=info: self._set_button_hover(item, False))
+        button.on_hover_change = lambda hovered, item=info: self._set_button_hover(item, hovered)
         self._style_button(info)
-        return outer
-
-    @staticmethod
-    def _button_from_frame(frame: tk.Frame) -> tk.Button | None:
-        children = frame.winfo_children()
-        return children[0] if children and isinstance(children[0], tk.Button) else None
+        return button
 
     def _set_button_hover(self, button_info: dict[str, object], hovered: bool) -> None:
         button_info["hover"] = hovered
@@ -600,9 +878,8 @@ class DevTerminalLauncher(tk.Tk):
 
     def _style_button(self, button_info: dict[str, object]) -> None:
         colors = config.COLORS
-        outer = button_info["outer"]
         button = button_info["button"]
-        if not isinstance(outer, tk.Frame) or not isinstance(button, tk.Button):
+        if not isinstance(button, RoundedButton):
             return
 
         variant = button_info["variant"]
@@ -635,14 +912,7 @@ class DevTerminalLauncher(tk.Tk):
                 fg = colors["text_secondary"]
                 border = colors["border"]
 
-        outer.configure(bg=border)
-        button.configure(
-            bg=bg,
-            fg=fg,
-            activebackground=bg,
-            activeforeground=fg,
-            disabledforeground=fg,
-        )
+        button.set_colors(fill=bg, foreground=fg, border=border)
 
     @staticmethod
     def _darken(color: str, amount: float) -> str:
